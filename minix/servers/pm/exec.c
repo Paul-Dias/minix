@@ -34,25 +34,41 @@
 /*===========================================================================*
  *				do_exec					     *
  *===========================================================================*/
-int
-do_exec(void)
+int iniciar_processo(void)
 {
-	message m;
+    // Estrutura para a comunicação entre processos
+    ipc_message msg_para_vfs;
+    // Armazenamento local para o caminho do arquivo
+    char caminho_executavel[PATH_MAX];
 
-	/* Forward call to VFS */
-	memset(&m, 0, sizeof(m));
-	m.m_type = VFS_PM_EXEC;
-	m.VFS_PM_ENDPT = mp->mp_endpoint;
-	m.VFS_PM_PATH = (void *)m_in.m_lc_pm_exec.name;
-	m.VFS_PM_PATH_LEN = m_in.m_lc_pm_exec.namelen;
-	m.VFS_PM_FRAME = (void *)m_in.m_lc_pm_exec.frame;
-	m.VFS_PM_FRAME_LEN = m_in.m_lc_pm_exec.framelen;
-	m.VFS_PM_PS_STR = m_in.m_lc_pm_exec.ps_str;
+    // Realiza a transferência do nome do programa do espaço do chamador para o buffer interno do sistema
+    if (sys_datacopy(who_e, (vir_bytes)m_in.m_lc_pm_exec.name,
+                     SELF, (vir_bytes)caminho_executavel, PATH_MAX) != OK) {
+        // Emite um aviso caso a transferência de dados falhe.
+        printf("Falha ao obter o caminho do programa.\n");
+        return EFAULT;
+    }
 
-	tell_vfs(mp, &m);
+    // Assegura que a string do caminho é nula-terminada
+    caminho_executavel[PATH_MAX - 1] = '\0';
 
-	/* Do not reply */
-	return SUSPEND;
+    // Exibe qual aplicação está prestes a ser iniciada
+    printf("Iniciando a execução de: %s\n", caminho_executavel);
+
+    // Prepara a mensagem a ser enviada para o VFS
+    memset(&msg_para_vfs, 0, sizeof(msg_para_vfs));
+    msg_para_vfs.m_type = VFS_PM_EXEC;
+    msg_para_vfs.VFS_PM_ENDPT = mp->mp_endpoint;
+    msg_para_vfs.VFS_PM_PATH = (void *)m_in.m_lc_pm_exec.name;
+    msg_para_vfs.VFS_PM_PATH_LEN = m_in.m_lc_pm_exec.namelen;
+    msg_para_vfs.VFS_PM_FRAME = (void *)m_in.m_lc_pm_exec.frame;
+    msg_para_vfs.VFS_PM_FRAME_LEN = m_in.m_lc_pm_exec.framelen;
+    msg_para_vfs.VFS_PM_PS_STR = m_in.m_lc_pm_exec.ps_str;
+
+    // Despacha a mensagem para o VFS para que ele continue o processo de execução.
+    notificar_vfs(mp, &msg_para_vfs);
+
+    return SUSPEND;
 }
 
 
