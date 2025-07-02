@@ -1781,6 +1781,24 @@ void dequeue(struct proc *rp)
 #endif
 }
 
+static unsigned long kernel_prng_state = 0; // Será inicializado dinamicamente
+
+/*===========================================================================*
+ *                           kernel_random                                   *
+ *===========================================================================*/
+int kernel_random(void)
+{
+    /* Inicializa seed na primeira chamada usando timer */
+    if (kernel_prng_state == 0) {
+        kernel_prng_state = get_monotonic() ^ 0xDEADBEEF;
+        if (kernel_prng_state == 0) kernel_prng_state = 1; // Evita seed zero
+    }
+    
+    kernel_prng_state = (1103515245 * kernel_prng_state + 12345) & 0x7fffffff;
+    return (int)(kernel_prng_state);
+}
+
+
 /*===========================================================================*
  *				pick_proc				     * 
  *===========================================================================*/
@@ -1804,7 +1822,7 @@ static struct proc * pick_proc(void)
         return NULL; // Nenhum processo pronto
 
     // 2. Sorteia um número entre 1 e total_tickets
-    r = (random() % total_tickets) + 1;
+    r = ((unsigned int)kernel_random() % (unsigned int)total_tickets) + 1;
 
     // 3. Busca o processo sorteado
     for (q=0; q < NR_SCHED_QUEUES; q++) {
