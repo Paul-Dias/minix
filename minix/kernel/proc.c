@@ -116,6 +116,7 @@ static void set_idle_name(char * name, int n)
 
 static message m_notify_buff = { 0, NOTIFY_MESSAGE };
 
+
 void proc_init(void)
 {
 	struct proc * rp;
@@ -134,6 +135,7 @@ void proc_init(void)
 		rp->p_scheduler = NULL;		/* no user space scheduler */
 		rp->p_priority = 0;		/* no priority */
 		rp->p_quantum_size_ms = 0;	/* no quantum size */
+		rp->tickets = 10;
 
 		/* arch-specific initialization */
 		arch_proc_reset(rp);
@@ -1784,32 +1786,45 @@ void dequeue(struct proc *rp)
  *===========================================================================*/
 static struct proc * pick_proc(void)
 {
-/* Decide who to run now.  A new process is selected and returned.
- * When a billable process is selected, record it in 'bill_ptr', so that the 
- * clock task can tell who to bill for system time.
- *
- * This function always uses the run queues of the local cpu!
- */
-  register struct proc *rp;			/* process to run */
-  struct proc **rdy_head;
-  int q;				/* iterate over queues */
+    /* Lottery Scheduling: escolhe o processo com base em tickets */
+    struct proc *rp, *winner = NULL;
+    struct proc **rdy_head;
+    int total_tickets = 0, r, q;
 
-  /* Check each of the scheduling queues for ready processes. The number of
-   * queues is defined in proc.h, and priorities are set in the task table.
-   * If there are no processes ready to run, return NULL.
-   */
-  rdy_head = get_cpulocal_var(run_q_head);
-  for (q=0; q < NR_SCHED_QUEUES; q++) {	
-	if(!(rp = rdy_head[q])) {
-		TRACE(VF_PICKPROC, printf("cpu %d queue %d empty\n", cpuid, q););
-		continue;
-	}
-	assert(proc_is_runnable(rp));
-	if (priv(rp)->s_flags & BILLABLE)	 	
-		get_cpulocal_var(bill_ptr) = rp; /* bill for system time */
-	return rp;
-  }
-  return NULL;
+    rdy_head = get_cpulocal_var(run_q_head);
+
+    // 1. Soma todos os tickets de todos os processos prontos
+    for (q=0; q < NR_SCHED_QUEUES; q++) {
+        for (rp = rdy_head[q]; rp != NULL; rp = rp->p_nextready) {
+            if (proc_is_runnable(rp))
+                total_tickets += rp->tickets;
+        }
+    }
+    if (total_tickets == 0)
+        return NULL; // Nenhum processo pronto
+
+    // 2. Sorteia um número entre 1 e total_tickets
+    r = (random() % total_tickets) + 1;
+
+    // 3. Busca o processo sorteado
+    for (q=0; q < NR_SCHED_QUEUES; q++) {
+        for (rp = rdy_head[q]; rp != NULL; rp = rp->p_nextready) {
+            if (proc_is_runnable(rp)) {
+                r -= rp->tickets;
+                if (r <= 0) {
+                    winner = rp;
+                    break;
+                }
+            }
+        }
+        if (winner)
+            break;
+    }
+
+    if (winner && (priv(winner)->s_flags & BILLABLE))
+        get_cpulocal_var(bill_ptr) = winner;
+
+    return winner;
 }
 
 /*===========================================================================*
