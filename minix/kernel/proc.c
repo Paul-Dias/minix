@@ -1722,7 +1722,9 @@ void enqueue(
      * process is assigned to.
      */
     int q = rp->p_priority; /* scheduling queue to use */
+    int time_left = rp->p_cpu_time_left;
     struct proc **rdy_head, **rdy_tail;
+    struct proc *p, *aux = NULL;
 
     assert(proc_is_runnable(rp));
 
@@ -1732,32 +1734,40 @@ void enqueue(
     rdy_tail = get_cpu_var(rp->p_cpu, run_q_tail);
 
     /* Now add the process to the queue. */
-    if (!rdy_head[q])
-    {                                   /* add to empty queue */
-        rdy_head[q] = rdy_tail[q] = rp; /* create a new queue */
-        rp->p_nextready = NULL;         /* mark new end */
+    if (!rdy_head[q]) { // Fila vazia
+        rdy_head[q] = rdy_tail[q] = rp;
+        rp->p_nextready = NULL;
+    } 
+    else if (time_left < rdy_head[q]->p_cpu_time_left) { // Menor tempo restante
+        rp->p_nextready = rdy_head[q];
+        rdy_head[q] = rp;
     }
-    else
-    {                                  /* add to tail of queue */
-        rdy_tail[q]->p_nextready = rp; /* chain tail of queue */
-        rdy_tail[q] = rp;              /* set new queue tail */
-        rp->p_nextready = NULL;        /* mark new end */
+    else if (time_left >= rdy_tail[q]->p_cpu_time_left) { // Maior tempo restante
+        rp->p_nextready = NULL;
+        rdy_tail[q]->p_nextready = rp;
+        rdy_tail[q] = rp;
     }
+    else{                                                 /* inserir o processo no lugar adequado perante ordenacao*/
+      for(p = rdy_head[q]; p != rdy_tail[q] && p->p_cpu_time_left > time_left ; p = p->p_nextready)
+        aux = p;
 
-    if (cpuid == rp->p_cpu)
-    {
-        /*
-         * enqueueing a process with a higher priority than the current one,
-         * it gets preempted. The current process must be preemptible. Testing
-         * the priority also makes sure that a process does not preempt itself
-         */
-        struct proc *p;
-        p = get_cpulocal_var(proc_ptr);
-        assert(p);
-        if ((p->p_priority > rp->p_priority) &&
-            (priv(p)->s_flags & PREEMPTIBLE))
-            RTS_SET(p, RTS_PREEMPTED); /* calls dequeue() */
-    }
+      aux->p_nextready = rp;
+      rp->p_nextready = p;
+   }
+
+  if (cpuid == rp->p_cpu) {
+	  /*
+	   * enqueueing a process with a higher priority than the current one,
+	   * it gets preempted. The current process must be preemptible. Testing
+	   * the priority also makes sure that a process does not preempt itself
+	   */
+	  struct proc * p;
+	  p = get_cpulocal_var(proc_ptr);
+	  assert(p);
+	  if((p->p_priority > rp->p_priority) &&
+			  (priv(p)->s_flags & PREEMPTIBLE))
+		  RTS_SET(p, RTS_PREEMPTED); /* calls dequeue() */
+  }
 #ifdef CONFIG_SMP
     /*
      * if the process was enqueued on a different cpu and the cpu is idle, i.e.
