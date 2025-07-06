@@ -1784,17 +1784,26 @@ void dequeue(struct proc *rp)
  *===========================================================================*/
 static struct proc * pick_proc(void)
 {
-	struct proc *p, *selected = NULL;
+    register struct proc *rp;	
+    int q;	
 
-    /* procura na lista de processos o primeiro item */
-    for (p = proc_head; p != NULL; p = p->next) {
-        if (p->p_rts_flags == 0) { // checar pronto
-            if (selected == NULL || p->arrival_time < selected->arrival_time) {
-                selected = p;
-            }
+    struct proc **rdy_head;
+
+    /* Pega a cabeça da fila de prontos da CPU atual */
+    rdy_head = get_cpulocal_var(run_q_head);
+
+    /* Itera sobre as filas, da maior prioridade (0) para a menor */
+    for (q = 0; q < NR_SCHED_QUEUES; q++) {
+        if ( (rp = rdy_head[q]) != NULL) {
+            /* Encontrou um processo. Remove ele da fila de prontos. */
+            rdy_head[q] = rp->p_nextready; 
+            
+            rp->p_accounting.dequeues++;
+            return rp;
         }
     }
-    return selected;
+
+    return (NULL);
 }
 
 /*===========================================================================*
