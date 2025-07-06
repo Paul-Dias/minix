@@ -135,6 +135,7 @@ void proc_init(void)
         rp->p_scheduler = NULL;                  /* no user space scheduler */
         rp->p_priority = 0;                      /* no priority */
         rp->p_quantum_size_ms = 0;               /* no quantum size */
+	rp->tickets = 100;
 
         /* arch-specific initialization */
         arch_proc_reset(rp);
