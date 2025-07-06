@@ -1,7 +1,6 @@
 /* This file contains essentially all of the process and message handling.
  * Together with "mpx.s" it forms the lowest layer of the MINIX kernel.
  * There is one entry point from the outside:
- * teste
  *   sys_call: 	      a system call, i.e., the kernel is trapped with an INT
  *
  * Changes:
@@ -135,7 +134,7 @@ void proc_init(void)
         rp->p_scheduler = NULL;                  /* no user space scheduler */
         rp->p_priority = 0;                      /* no priority */
         rp->p_quantum_size_ms = 0;               /* no quantum size */
-        rp->tickets = 100;
+        rp->tickets = 10;
 
         /* arch-specific initialization */
         arch_proc_reset(rp);
@@ -1937,60 +1936,28 @@ static struct proc *pick_proc(void)
 
     rdy_head = get_cpulocal_var(run_q_head);
 
-    for (q = 0; q < USER_Q; q++)
-    {
-        if ((rp = rdy_head[q]) != NULL)
-        {
-            assert(proc_is_runnable(rp));
-            if (priv(rp)->s_flags & BILLABLE)
-                get_cpulocal_var(bill_ptr) = rp;
-            return rp; // Retorna imediatamente
-        }
-    }
-
     // 1. Soma todos os tickets de todos os processos prontos
-    for (q = USER_Q; q < NR_SCHED_QUEUES; q++)
+    for (q = 0; q < NR_SCHED_QUEUES; q++)
     {
         for (rp = rdy_head[q]; rp != NULL; rp = rp->p_nextready)
         {
             if (proc_is_runnable(rp))
-            {
-                if (rp->tickets <= 0)
-                {
-                    rp->tickets = 100; /* Valor padrão */
-                }
                 total_tickets += rp->tickets;
-            }
         }
     }
-
-    /* Se não há processos ou tickets, volta ao escalonamento tradicional */
     if (total_tickets == 0)
-    {
-        /* Fallback para escalonamento por prioridade tradicional */
-        for (q = USER_Q; q < NR_SCHED_QUEUES; q++)
-        {
-            if ((rp = rdy_head[q]) != NULL)
-            {
-                assert(proc_is_runnable(rp));
-                if (priv(rp)->s_flags & BILLABLE)
-                    get_cpulocal_var(bill_ptr) = rp;
-                return rp;
-            }
-        }
-        return NULL;
-    }
+        return NULL; // Nenhum processo pronto
 
+    // 2. Sorteia um número entre 1 e total_tickets
     r = ((unsigned int)kernel_random() % (unsigned int)total_tickets) + 1;
 
     // 3. Busca o processo sorteado
-    for (q = USER_Q; q < NR_SCHED_QUEUES; q++)
+    for (q = 0; q < NR_SCHED_QUEUES; q++)
     {
         for (rp = rdy_head[q]; rp != NULL; rp = rp->p_nextready)
         {
             if (proc_is_runnable(rp))
             {
-                /* Usa diretamente o campo tickets (já validado acima) */
                 r -= rp->tickets;
                 if (r <= 0)
                 {
@@ -2001,19 +1968,6 @@ static struct proc *pick_proc(void)
         }
         if (winner)
             break;
-    }
-
-    /* Se por algum motivo não encontrou winner, pega o primeiro processo disponível */
-    if (!winner)
-    {
-        for (q = USER_Q; q < NR_SCHED_QUEUES; q++)
-        {
-            if ((rp = rdy_head[q]) != NULL && proc_is_runnable(rp))
-            {
-                winner = rp;
-                break;
-            }
-        }
     }
 
     if (winner && (priv(winner)->s_flags & BILLABLE))
